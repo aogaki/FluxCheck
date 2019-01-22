@@ -42,3 +42,4 @@ Makefile
 GBSFit
 MyDict.cxx
 compile_commands.json
+fluxChecker
