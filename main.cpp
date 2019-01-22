@@ -54,7 +54,8 @@ int kbhit(void)
 
 void UploadData(double currentTime, double rate)
 {
-  mongocxx::client conn{mongocxx::uri{}};
+  // mongocxx::client conn{mongocxx::uri{}};
+  mongocxx::client conn{mongocxx::uri{"mongodb://192.168.161.73/"}};
 
   auto collection = conn["node-angular"]["posts"];
   bsoncxx::builder::stream::document buf{};
@@ -77,8 +78,10 @@ int main(int argc, char **argv)
   mongocxx::instance inst{};
 
   auto SWtrigger = false;
-  auto vTh = -0.5;
+  auto vTh = -0.1;
+  auto DCOffset = 0.9;
   auto timeInterval = 60;
+  auto singleCh = true;
 
   for (auto i = 1; i < argc; i++) {
     if (std::string(argv[i]) == "-s") {
@@ -87,21 +90,27 @@ int main(int argc, char **argv)
       vTh = atof(argv[++i]);
     } else if (std::string(argv[i]) == "-i") {
       timeInterval = atof(argv[++i]);
+    } else if (std::string(argv[i]) == "-a") {
+      singleCh = false;
     }
   }
 
   TApplication app("testApp", &argc, argv);
 
-  int link = 0;
+  int link = 1;
   auto digi = new TWaveRecord(CAEN_DGTZ_USB, link);
   digi->SetThreshold(vTh);
+  digi->SetDCOffset(DCOffset);
+  digi->SetSingleCh(singleCh);
 
   digi->Initialize();
 
   digi->StartAcquisition();
 
-  TH1D *hisCharge = new TH1D("hisCharge", "test", 20000, 0, 20000);
+  TH1D *hisCharge = new TH1D("hisCharge", "test", 5000, -1000, 49000);
   TGraph *grWave = new TGraph();
+  // grWave->SetMaximum(15000);
+  // grWave->SetMinimum(14000);
   grWave->SetMaximum(20000);
   grWave->SetMinimum(0);
   for (uint iSample = 0; iSample < kNSamples; iSample++) {
@@ -116,15 +125,10 @@ int main(int argc, char **argv)
   auto lastTime = time(0);
   auto hitCounter = 0;
 
-  while (true) {
-    if (SWtrigger) {
-      auto hit = dist(engine);
-      for (auto j = 0; j < hit; j++) digi->SendSWTrigger();
-    }
+  for (auto loopCounter = 0; true; loopCounter++) {
     digi->ReadEvents();
 
     const int nHit = digi->GetNEvents();
-    hitCounter += nHit;
 
     auto dataArray = digi->GetDataArray();
     for (int i = 0; i < nHit; i++) {
@@ -144,39 +148,51 @@ int main(int argc, char **argv)
 
       memcpy(&data.ADC, &dataArray[index + offset], sizeof(data.ADC));
       offset += sizeof(data.ADC);
+
+      unsigned short pulse[kNSamples];
+      memcpy(pulse, &dataArray[index + offset], sizeof(pulse));
+      offset += sizeof(pulse);
+
       if (data.ChNumber == 0) {
-        hisCharge->Fill(data.ADC);
+        hitCounter++;
+        hisCharge->Fill(data.ADC * 1.e-8);
 
-        for (uint iSample = 0; iSample < kNSamples; iSample++) {
-          unsigned short pulse;
-          memcpy(&pulse, &dataArray[index + offset], sizeof(pulse));
-          offset += sizeof(pulse);
-
-          grWave->SetPoint(iSample, iSample * 2, pulse);  // one sample 2 ns
-        }
+        auto arrayY = grWave->GetY();
+        // memcpy(arrayY, pulse, sizeof(pulse));
+        for (uint iSample = 0; iSample < kNSamples; iSample++)
+          arrayY[iSample] = pulse[iSample];
       }
     }
 
     auto currentTime = time(0);
     if ((currentTime - lastTime) >= timeInterval) {
-      double hitRate = hitCounter / (currentTime - lastTime);
-      hitCounter = 0;
+      double hitRate = double(hitCounter) / (currentTime - lastTime);
       lastTime = currentTime;
-      std::cout << currentTime << "\t" << hitRate << std::endl;
-      UploadData(currentTime, hitRate);
+      std::cout << currentTime << "\t" << hitRate << " Hz\t" << hitCounter
+                << " hit" << std::endl;
+      // UploadData(currentTime, hitRate);
+      UploadData(currentTime, hitCounter);
+      hitCounter = 0;
     }
 
-    canvas2->cd();
-    grWave->Draw("AL");
-    canvas2->Update();
+    if ((loopCounter % 100) == 0) {
+      canvas2->cd();
+      grWave->Draw("AL");
+      canvas2->Update();
 
-    canvas->cd();
-    hisCharge->Draw();
-    canvas->Update();
+      canvas->cd();
+      hisCharge->Draw();
+      canvas->Update();
+    }
 
     if (kbhit()) {
       break;
     } else {
+      if (SWtrigger) {
+        auto hit = dist(engine);
+        hit = 100;
+        for (auto j = 0; j < hit; j++) digi->SendSWTrigger();
+      }
       usleep(1000);
     }
   }

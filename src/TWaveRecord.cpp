@@ -58,7 +58,7 @@ void TWaveRecord::SetParameters()
   fPolarity = CAEN_DGTZ_TriggerOnFallingEdge;
   // fTriggerMode = CAEN_DGTZ_TRGMODE_ACQ_AND_EXTOUT;
   fPostTriggerSize = 80;
-  fGateSize = 400;  // ns
+  fGateSize = 600;  // ns
 }
 
 void TWaveRecord::Initialize()
@@ -89,6 +89,7 @@ void TWaveRecord::ReadEvents()
       CAEN_DGTZ_GetNumEvents(fHandler, fpReadoutBuffer, fBufferSize, &fNEvents);
   PrintError(err, "GetNumEvents");
   // std::cout << fNEvents << " Events" << std::endl;
+  // if (fNEvents > 1) fNEvents = 1;
 
   // fData->clear();
   TStdData data;
@@ -108,48 +109,36 @@ void TWaveRecord::ReadEvents()
     err = CAEN_DGTZ_DecodeEvent(fHandler, fpEventPtr, (void **)&fpEventStd);
     PrintError(err, "DecodeEvent");
 
-    for (uint32_t iCh = 0; iCh < fNChs; iCh++) {
-      // for (uint32_t iCh = 0; iCh < 1; iCh++) {
-      const uint32_t chSize = fpEventStd->ChSize[iCh];
-      // if (chSize != kNSamples) {
-      //   std::cout << "No. samples of wave form error" << std::endl;
-      // }
+    // It should be for each channel!
+    uint64_t timeStamp = (fEventInfo.TriggerTimeTag + fTimeOffset) * fTSample;
+    if (timeStamp < fPreviousTime) {
+      constexpr uint32_t maxTime = 0xFFFFFFFF / 2;  // Check manual
+      timeStamp += maxTime * fTSample;
+      fTimeOffset += maxTime;
+    }
+    fPreviousTime = timeStamp;
 
-      int16_t sumCharge = 0.;
-      // for (uint32_t i = 0; i < chSize; i++) {
-      // const uint32_t start = 0;
-      int32_t tmp = (chSize * (100 - fPostTriggerSize) / 100) -
-                    (fGateSize / fTSample / 2);
-      if (tmp < 0) tmp = 0;
-      uint32_t start = tmp;
-      // const uint32_t stop = chSize;
-      uint32_t stop = (chSize * (100 - fPostTriggerSize) / 100) +
-                      (fGateSize / fTSample / 2);
+    int index = 0;
+    auto nLoop = fNChs;
+    if (fSingleChFlag) nLoop = 1;
+    for (uint32_t iCh = 0; iCh < nLoop; iCh++) {
+      double sumCharge = 0.;
 
-      uint32_t baseSample = 256;
-      if (baseSample > start) baseSample = start - 1;
+      // fBaseLine = (1 << fNBits) * fDCOffset;
       fBaseLine = 0;
-      for (uint32_t i = 0; i < baseSample; i++) {
+      auto baseSample = 100;
+      for (uint32_t i = kNSamples - baseSample; i < kNSamples; i++) {
         fBaseLine += fpEventStd->DataChannel[iCh][i];
       }
       fBaseLine /= baseSample;
 
-      for (uint32_t i = start; i < stop; i++) {
+      for (uint32_t i = 0; i < kNSamples; i++) {
         sumCharge += (fBaseLine - fpEventStd->DataChannel[iCh][i]);
-        // std::cout << fBaseLine <<"\t"<< fpEventStd->DataChannel[iCh][i] <<
-        // std::endl;
+        // std::cout << fBaseLine << "\t" << fpEventStd->DataChannel[iCh][i]
+        //           << std::endl;
       }
 
-      // It should be for each channel!
-      uint64_t timeStamp = (fEventInfo.TriggerTimeTag + fTimeOffset) * fTSample;
-      if (timeStamp < fPreviousTime) {
-        constexpr uint32_t maxTime = 0xFFFFFFFF / 2;  // Check manual
-        timeStamp += maxTime * fTSample;
-        fTimeOffset += maxTime;
-      }
-      fPreviousTime = timeStamp;
-
-      int index = (iEve * (fNChs * ONE_HIT_SIZE)) + (iCh * ONE_HIT_SIZE);
+      // int index = (iEve * (fNChs * ONE_HIT_SIZE)) + (iCh * ONE_HIT_SIZE);
       fDataArray[index++] = fModNumber;  // fModNumber is needed.
       fDataArray[index++] = iCh;         // int to char.  Dangerous
 
@@ -157,8 +146,11 @@ void TWaveRecord::ReadEvents()
       memcpy(&fDataArray[index], &timeStamp, timeSize);
       index += timeSize;
 
+      // int16_t adc = sumCharge / 1000000;
+      // constexpr auto adcSize = sizeof(adc);
+      // memcpy(&fDataArray[index], &adc, adcSize);
+      // index += adcSize;
       constexpr auto adcSize = sizeof(sumCharge);
-      // auto adc = sumCharge;
       memcpy(&fDataArray[index], &sumCharge, adcSize);
       index += adcSize;
 
@@ -179,9 +171,17 @@ void TWaveRecord::AcquisitionConfig()
 
   // Eanble all channels
   uint32_t mask = ((1 << fNChs) - 1);
-  // mask = 1;  // Only for ch 0
+  if (fSingleChFlag) mask = 1;  // Only for ch 0
   err = CAEN_DGTZ_SetChannelEnableMask(fHandler, mask);
   PrintError(err, "SetChannelEnableMask");
+
+  // Set DC offset
+  auto fac = (1. - fDCOffset);
+  if (fac <= 0. || fac >= 1.) fac = 0.5;
+  uint32_t offset = 0xFFFF * fac;
+  for (uint32_t iCh = 0; iCh < fNChs; iCh++)
+    err = CAEN_DGTZ_SetChannelDCOffset(fHandler, iCh, offset);
+  PrintError(err, "SetChannelDCOffset");
 
   // Set the acquisition mode
   err = CAEN_DGTZ_SetAcquisitionMode(fHandler, CAEN_DGTZ_SW_CONTROLLED);
@@ -198,10 +198,9 @@ void TWaveRecord::TriggerConfig()
 
   // Set the trigger threshold
   // The unit of its are V
-  int32_t th = ((1 << fNBits) / 2) * ((fVth / (fVpp / 2)));
-  uint32_t thVal = (1 << fNBits) / 2;
-  if (thVal == 0) thVal = ((1 << fNBits) / 2);
-  thVal += th;
+  int32_t th = (1 << fNBits) * (fVth / fVpp);
+  auto offset = (1 << fNBits) * fDCOffset;
+  auto thVal = th + offset;
   std::cout << "Vth:\t" << thVal << "\t" << fVth << std::endl;
 
   for (uint32_t iCh = 0; iCh < fNChs; iCh++) {
@@ -212,10 +211,11 @@ void TWaveRecord::TriggerConfig()
 
   // Set the triggermode
   uint32_t mask = ((1 << fNChs) - 1);
+  if (fSingleChFlag) mask = 1;  // Only for ch 0
   err = CAEN_DGTZ_SetChannelSelfTrigger(fHandler, fTriggerMode, mask);
   PrintError(err, "SetChannelSelfTrigger");
-  err = CAEN_DGTZ_SetSWTriggerMode(fHandler, fTriggerMode);
-  PrintError(err, "SetSWTriggerMode");
+  // err = CAEN_DGTZ_SetSWTriggerMode(fHandler, fTriggerMode);
+  // PrintError(err, "SetSWTriggerMode");
 
   // Set post trigger size
   err = CAEN_DGTZ_SetPostTriggerSize(fHandler, fPostTriggerSize);

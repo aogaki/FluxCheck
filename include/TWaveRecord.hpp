@@ -28,9 +28,16 @@ class TWaveRecord : public TDigitizer
   CAEN_DGTZ_ErrorCode StartAcquisition();
   void StopAcquisition();
 
-  uint32_t GetNEvents() { return fNEvents * fNChs; };
+  uint32_t GetNEvents()
+  {
+    return (fSingleChFlag ? fNEvents : fNEvents * fNChs);
+  };
 
   void SetThreshold(double th) { fVth = th; };
+
+  void SetDCOffset(double val) { fDCOffset = val; };
+
+  void SetSingleCh(bool flag) { fSingleChFlag = flag; };
 
  protected:
   // For event readout
@@ -49,6 +56,7 @@ class TWaveRecord : public TDigitizer
   // For trigger setting
   double fVpp;
   double fVth;
+  double fDCOffset;  // 0 to 1
   CAEN_DGTZ_TriggerMode_t fTriggerMode;
   CAEN_DGTZ_TriggerPolarity_t fPolarity;
   uint32_t fPostTriggerSize;
@@ -62,6 +70,8 @@ class TWaveRecord : public TDigitizer
 
   void AcquisitionConfig();
   void TriggerConfig();
+
+  bool fSingleChFlag;
 };
 
 #endif
