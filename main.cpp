@@ -10,6 +10,7 @@
 #include <TGraph.h>
 #include <TH1.h>
 
+#include "TPSD.hpp"
 #include "TWaveRecord.hpp"
 
 #include <bsoncxx/builder/stream/document.hpp>
@@ -79,9 +80,9 @@ int main(int argc, char **argv)
 
   auto SWtrigger = false;
   auto vTh = -0.1;
-  auto DCOffset = 0.9;
+  auto DCOffset = 0.8;
   auto timeInterval = 60;
-  auto singleCh = true;
+  // auto singleCh = true;
 
   for (auto i = 1; i < argc; i++) {
     if (std::string(argv[i]) == "-s") {
@@ -91,17 +92,18 @@ int main(int argc, char **argv)
     } else if (std::string(argv[i]) == "-i") {
       timeInterval = atof(argv[++i]);
     } else if (std::string(argv[i]) == "-a") {
-      singleCh = false;
+      // singleCh = false;
     }
   }
 
   TApplication app("testApp", &argc, argv);
 
-  int link = 1;
-  auto digi = new TWaveRecord(CAEN_DGTZ_USB, link);
+  int link = 0;
+  // auto digi = new TWaveRecord(CAEN_DGTZ_USB, link);
+  auto digi = new TPSD(CAEN_DGTZ_USB, link);
   digi->SetThreshold(vTh);
   digi->SetDCOffset(DCOffset);
-  digi->SetSingleCh(singleCh);
+  // digi->SetSingleCh(singleCh);
 
   digi->Initialize();
 
@@ -109,8 +111,8 @@ int main(int argc, char **argv)
 
   TH1D *hisCharge = new TH1D("hisCharge", "test", 5000, -1000, 49000);
   TGraph *grWave = new TGraph();
-  // grWave->SetMaximum(15000);
-  // grWave->SetMinimum(14000);
+  // grWave->SetMaximum(14000);
+  // grWave->SetMinimum(12000);
   grWave->SetMaximum(20000);
   grWave->SetMinimum(0);
   for (uint iSample = 0; iSample < kNSamples; iSample++) {
@@ -155,7 +157,7 @@ int main(int argc, char **argv)
 
       if (data.ChNumber == 0) {
         hitCounter++;
-        hisCharge->Fill(data.ADC * 1.e-8);
+        hisCharge->Fill(data.ADC);
 
         auto arrayY = grWave->GetY();
         // memcpy(arrayY, pulse, sizeof(pulse));
@@ -190,7 +192,7 @@ int main(int argc, char **argv)
     } else {
       if (SWtrigger) {
         auto hit = dist(engine);
-        hit = 100;
+        hit = 1;
         for (auto j = 0; j < hit; j++) digi->SendSWTrigger();
       }
       usleep(1000);

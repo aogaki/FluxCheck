@@ -1,0 +1,3 @@
+-I/opt/ROOT/include
+-I/home/aogaki/DAQ/CAENDigitizer/include
+-I/usr/include/daqmw

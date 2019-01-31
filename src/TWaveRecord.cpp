@@ -57,7 +57,7 @@ void TWaveRecord::SetParameters()
   // fVth = -0.001;
   fPolarity = CAEN_DGTZ_TriggerOnFallingEdge;
   // fTriggerMode = CAEN_DGTZ_TRGMODE_ACQ_AND_EXTOUT;
-  fPostTriggerSize = 80;
+  fPostTriggerSize = 50;
   fGateSize = 600;  // ns
 }
 
