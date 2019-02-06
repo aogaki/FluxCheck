@@ -65,6 +65,7 @@ target_link_libraries(fluxChecker
   PRIVATE ${LIBMONGOCXX_LIBRARIES};
   ${ROOT_LIBRARIES}
   CAENDigitizer
+  RHTTP
 )
 
 target_compile_definitions(fluxChecker
