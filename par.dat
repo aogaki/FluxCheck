@@ -1,6 +1,5 @@
 Polarity	Negative
-DCOffset	0.4
-Threshold	1000
-Start	1
-Stop	5000
-
+DCOffset	0.1
+Threshold	500
+Start	4200
+Stop	5200

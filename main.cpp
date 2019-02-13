@@ -6,6 +6,7 @@
 
 #include <TApplication.h>
 #include <TCanvas.h>
+#include <TFile.h>
 #include <TGraph.h>
 #include <TH1.h>
 #include <THttpServer.h>
@@ -103,10 +104,11 @@ int main(int argc, char **argv)
 
   auto digi = new TPSD(CAEN_DGTZ_USB, linkNumber);
   // auto digi = new TDPP(CAEN_DGTZ_USB, linkNumber);
+  // digi->ConfigDevice();
   digi->Initialize();
   digi->StartAcquisition();
 
-  TH1D *hisCharge = new TH1D("hisCharge", "test", 20000, 0, 20000);
+  TH1D *hisCharge = new TH1D("hisCharge", "test", 50000, 0, 50000);
   TCanvas *canvas = new TCanvas();
   TGraph *grWave = new TGraph();
   grWave->SetMaximum(20000);
@@ -151,7 +153,7 @@ int main(int argc, char **argv)
 
       memcpy(&data.ADC, &dataArray[index + offset], sizeof(data.ADC));
       offset += sizeof(data.ADC);
-      if (data.ChNumber == 0) {
+      if (data.ChNumber == 1) {
         hisCharge->Fill(data.ADC);
 
         for (uint iSample = 0; iSample < kNSamples; iSample++) {
@@ -176,7 +178,7 @@ int main(int argc, char **argv)
       lastTime = currentTime;
     }
 
-    if ((loopCounter % 1000) == 0) {
+    if ((loopCounter % 100) == 0) {
       canvas2->cd();
       grWave->Draw("AL");
       canvas2->Update();
@@ -193,11 +195,31 @@ int main(int argc, char **argv)
     usleep(1000);
   }
 
+  if (1) {
+    canvas2->cd();
+    grWave->Draw("AL");
+    canvas2->Update();
+
+    canvas->cd();
+    hisCharge->Draw();
+    canvas->Update();
+
+    gSystem->ProcessEvents();
+
+    TFile output("snapshot.root", "RECREATE");
+    hisCharge->Write();
+    output.Close();
+  }
+
+  std::cout << "Start to stop" << std::endl;
   digi->StopAcquisition();
+
+  std::cout << "Stop Acquisition" << std::endl;
 
   // app.Run();
   delete digi;
 
+  server->Unregister(hisCharge);
   delete server;
 
   return 0;
