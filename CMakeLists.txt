@@ -21,7 +21,7 @@ if(POLICY CMP0025)
     cmake_policy(SET CMP0025 NEW)
 endif()
 
-project(HELLO_WORLD LANGUAGES C CXX)
+project(FLUX_CHECKER LANGUAGES C CXX)
 
 # Enforce the C++ standard, and disable extensions.
 if(NOT DEFINED CMAKE_CXX_STANDARD)
@@ -40,8 +40,8 @@ endif()
 # was used as the argument to CMAKE_INSTALL_PREFIX when building libmongocxx.
 find_package(libmongocxx REQUIRED)
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
-file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hpp)
+file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp ${PROJECT_SOURCE_DIR}/TFlux.cpp)
+file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hpp ${PROJECT_SOURCE_DIR}/TFlux.hpp)
 add_executable(fluxChecker ./main.cpp  ${sources} ${headers})
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
