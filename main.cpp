@@ -13,7 +13,6 @@
 #include <TStyle.h>
 #include <TSystem.h>
 
-// #include "TDPP.hpp"
 #include "TPSD.hpp"
 #include "TWaveRecord.hpp"
 
@@ -76,7 +75,7 @@ int main(int argc, char **argv)
 {
   // We can make instance only onece
   // Making it at main function is enough
-  mongocxx::instance inst{};
+  mongocxx::instance *inst = new mongocxx::instance;
 
   auto timeInterval = 60;
   auto linkNumber = 0;
@@ -94,31 +93,39 @@ int main(int argc, char **argv)
   std::ifstream fin("par.dat");
   std::string key, val;
   int startBin, stopBin;
+  uint chMask = 0b00000001;
+  uint checkCh = 0;
   while (fin >> key >> val) {
     if (key == "Start")
       startBin = std::stoi(val);
     else if (key == "Stop")
       stopBin = std::stoi(val);
+    else if (key == "Channel") {
+      checkCh = std::stoi(val);
+      chMask = 0b1 << checkCh;
+    }
   }
   fin.close();
+  std::cout << "mask: " << chMask << std::endl;
 
   auto digi = new TPSD(CAEN_DGTZ_USB, linkNumber);
-  // auto digi = new TDPP(CAEN_DGTZ_USB, linkNumber);
-  // digi->ConfigDevice();
+  digi->SetChMask(chMask);
   digi->Initialize();
   digi->StartAcquisition();
 
-  TH1D *hisCharge = new TH1D("hisCharge", "test", 50000, 0, 50000);
-  TCanvas *canvas = new TCanvas();
+  TH1D *hisCharge = new TH1D("hisCharge", "test", 33000, 0, 33000);
+  TCanvas *canvas = new TCanvas("test", "test", 1600, 600);
+  canvas->Divide(2, 1);
   TGraph *grWave = new TGraph();
+  for (uint iSample = 0; iSample < kNSamples; iSample++)
+    grWave->SetPoint(iSample, iSample * 2, 8000);  // one sample 2 ns
   grWave->SetMaximum(20000);
   grWave->SetMinimum(0);
-  TCanvas *canvas2 = new TCanvas();
-  canvas->cd();
+  canvas->cd(1);
   hisCharge->Draw();
 
   gStyle->SetOptFit(1111);
-  auto server = new THttpServer("http:8080?monitoring=5000;rw;noglobal");
+  auto server = new THttpServer("http:8088?monitoring=5000;rw;noglobal");
   server->Register("", hisCharge);
 
   gSystem->ProcessEvents();
@@ -127,7 +134,6 @@ int main(int argc, char **argv)
   auto lastHit = 0;
   for (int loopCounter = 0; true; loopCounter++) {
     //   // if (i > 10) break;
-    // std::cout << i << std::endl;
 
     // for (int j = 0; j < 10; j++) digi->SendSWTrigger();
     digi->ReadEvents();
@@ -153,7 +159,7 @@ int main(int argc, char **argv)
 
       memcpy(&data.ADC, &dataArray[index + offset], sizeof(data.ADC));
       offset += sizeof(data.ADC);
-      if (data.ChNumber == 1) {
+      if (data.ChNumber == checkCh) {
         hisCharge->Fill(data.ADC);
 
         for (uint iSample = 0; iSample < kNSamples; iSample++) {
@@ -179,11 +185,11 @@ int main(int argc, char **argv)
     }
 
     if ((loopCounter % 100) == 0) {
-      canvas2->cd();
+      canvas->cd(2);
       grWave->Draw("AL");
-      canvas2->Update();
+      canvas->Update();
 
-      canvas->cd();
+      canvas->cd(1);
       hisCharge->Draw();
       canvas->Update();
 
@@ -196,9 +202,9 @@ int main(int argc, char **argv)
   }
 
   if (1) {
-    canvas2->cd();
+    canvas->cd(2);
     grWave->Draw("AL");
-    canvas2->Update();
+    canvas->Update();
 
     canvas->cd();
     hisCharge->Draw();
@@ -213,12 +219,15 @@ int main(int argc, char **argv)
 
   std::cout << "Start to stop" << std::endl;
   digi->StopAcquisition();
+  delete inst;
 
   std::cout << "Stop Acquisition" << std::endl;
 
   // app.Run();
   delete digi;
 
+  std::cout << "Kill ROOT classes" << std::endl;
+  delete canvas;
   server->Unregister(hisCharge);
   delete server;
 
