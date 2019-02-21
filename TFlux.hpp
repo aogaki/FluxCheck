@@ -2,6 +2,7 @@
 #define TFLUX_HPP 1
 
 #include <deque>
+#include <mutex>
 #include <vector>
 
 #include <TCanvas.h>
@@ -10,7 +11,6 @@
 #include <TH1.h>
 #include <THttpServer.h>
 #include <TStyle.h>
-#include <TSystem.h>
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/builder/stream/helpers.hpp>
@@ -46,9 +46,13 @@ class TFlux
 
   void FillData();
 
+  void Terminate() { fAcqFlag = false; };
+
  private:
   TPSD *fDigitizer;
+
   std::deque<SampleData> fQueue;
+  std::mutex fMutex;
 
   mongocxx::instance *fMongoInstance;
 
