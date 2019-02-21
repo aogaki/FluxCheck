@@ -86,12 +86,10 @@ void TFlux::ReadDigitizer()
       memcpy(&data.ADC, &dataArray[index + offset], sizeof(data.ADC));
       offset += sizeof(data.ADC);
 
-      // for (uint iSample = 0; iSample < kNSamples; iSample++) {
-      // Do the memcpy onece, Stupid
       constexpr auto dataSize = sizeof(data.Waveform[0]) * kNSamples;
       memcpy(&data.Waveform[0], &dataArray[index + offset], dataSize);
       offset += dataSize;
-      // }
+
       fMutex.lock();
       fQueue.push_back(data);
       fMutex.unlock();
