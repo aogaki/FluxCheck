@@ -20,6 +20,11 @@ TFlux::TFlux()
   gStyle->SetOptFit(1111);
   fHisADC = new TH1D("hisADC", "Flux check", 33000, 0, 33000);
 
+  fHisTime = new TH1D("hisTime", "Time stamp check", 2000, 0, 2000);
+
+  fHisTimeADC =
+      new TH2D("hisTimeADC", "Time stamp check", 1500, 0, 1500, 2000, 0, 20000);
+
   fCanvas = new TCanvas("flux", "Flux check", 1600, 600);
   fCanvas->Divide(2, 1);
   fCanvas->cd(2)->SetGrid(kTRUE, kTRUE);
@@ -51,22 +56,34 @@ TFlux::~TFlux()
   delete fDigitizer;
   delete fMongoInstance;
 
+  std::cout << "Delete ROOT stuffs" << std::endl;
+  auto file = new TFile("fineTS.root", "RECREATE");
+  fHisTime->Write();
+  fHisADC->Write();
+  fHisTimeADC->Write();
+  file->Close();
+  delete file;
+  delete fCanvas;
+  delete fGrWave;
+
+  delete fHisTime;
+  delete fHisADC;
+
   // fServer->Unregister(fHisADC);
   // fServer->SetTerminate();
   delete fServer;
-  delete fCanvas;
-  delete fHisADC;
-  delete fGrWave;
 }
 
 void TFlux::ReadDigitizer()
 {
   while (fAcqFlag) {
+    // fMutex.lock();
     fDigitizer->ReadEvents();
-
     auto dataArray = fDigitizer->GetDataArray();
     const int nHit = fDigitizer->GetNEvents();
+    // fMutex.unlock();
     // std::cout << nHit << std::endl;
+
     for (int i = 0; i < nHit; i++) {
       auto index = (i * ONE_HIT_SIZE);
       auto offset = 0;
@@ -94,7 +111,25 @@ void TFlux::ReadDigitizer()
       fQueue.push_back(data);
       fMutex.unlock();
     }
-    usleep(1000);
+    // usleep(100);
+  }
+}
+
+void TFlux::ReadADC()
+{
+  std::vector<uint> adcVec;
+  adcVec.reserve(1024 * 1024);
+
+  while (fAcqFlag) {
+    // fMutex.lock();
+    adcVec.resize(0);
+    fDigitizer->ReadADC(adcVec);
+    fMutex.lock();
+    // for (auto &&adc : adcVec) fADCQueue.push_back(adc);
+    for (auto &&adc : adcVec) fHisADC->Fill(adc);
+    fMutex.unlock();
+    if ((++fFillCounter % 1000) == 0) PlotAll();
+    // usleep(100);
   }
 }
 
@@ -104,6 +139,9 @@ void TFlux::FillData()
     while (!fQueue.empty()) {
       auto data = fQueue.front();
       fHisADC->Fill(data.ADC);
+      fHisTime->Fill(data.TimeStamp);
+      // fHisTime->Fill(data.TimeStamp * 2000 / 1024);
+      fHisTimeADC->Fill(data.TimeStamp, data.ADC);
 
       for (uint iSample = 0; iSample < kNSamples; iSample++) {
         fGrWave->SetPoint(iSample, iSample * 2, data.Waveform[iSample]);
@@ -118,6 +156,27 @@ void TFlux::FillData()
 
     usleep(1000);
   }
+
+  PlotAll();
+}
+
+void TFlux::FillADC()
+{
+  while (fAcqFlag) {
+    while (!fADCQueue.empty()) {
+      auto adc = fADCQueue.front();
+      fHisADC->Fill(adc);
+      fMutex.lock();
+      fADCQueue.pop_front();
+      fMutex.unlock();
+    }
+
+    if ((++fFillCounter % 1000) == 0) PlotAll();
+
+    usleep(100);
+  }
+
+  PlotAll();
 }
 
 void TFlux::TimeCheck()
@@ -126,7 +185,9 @@ void TFlux::TimeCheck()
     if (fLastTime == 0) fLastTime = time(0);
     auto currentTime = time(0);
     if ((currentTime - fLastTime) >= fTimeInterval) {
+      fMutex.lock();
       auto hitCounter = fHisADC->Integral(fStartBin, fStopBin) - fLastHit;
+      fMutex.unlock();
       auto hitRate = hitCounter / (currentTime - fLastTime);
       std::cout << currentTime << "\t" << hitRate << " Hz\t" << hitCounter
                 << " hit" << std::endl;
@@ -181,4 +242,14 @@ void TFlux::UploadData(double currentTime, double rate)
       << "content" << currentTime << "imagePath" << rate;
   collection.insert_one(buf.view());
   buf.clear();
+}
+
+void TFlux::SWTrigger()
+{
+  while (fAcqFlag) {
+    fMutex.lock();
+    for (auto i = 0; i < 10; i++) fDigitizer->SendSWTrigger();
+    fMutex.unlock();
+    usleep(1000);
+  }
 }

@@ -46,3 +46,4 @@ fluxChecker
 ReadoutTest_DPP_PSD_x725_x730.c
 Functions.h
 Configure.cpp
+snapshot.root

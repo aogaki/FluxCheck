@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <termios.h>
+#include <iostream>
 #include <thread>
 
 #include <TApplication.h>
@@ -54,7 +55,10 @@ int main(int argc, char **argv)
 
   std::thread readDigitizer(&TFlux::ReadDigitizer, checker);
   std::thread fillData(&TFlux::FillData, checker);
+  // std::thread readDigitizer(&TFlux::ReadADC, checker);
+  // std::thread fillData(&TFlux::FillADC, checker);
   std::thread timeCheck(&TFlux::TimeCheck, checker);
+  // std::thread trigger(&TFlux::SWTrigger, checker);
 
   while (true) {
     gSystem->ProcessEvents();  // This should be called at main thread
@@ -64,14 +68,18 @@ int main(int argc, char **argv)
       readDigitizer.join();
       fillData.join();
       timeCheck.join();
+      // trigger.join();
       break;
     }
 
     usleep(1000);
   }
 
+  std::cout << "Stop!" << std::endl;
+  gSystem->ProcessEvents();
   checker->StopAcquisition();
 
+  std::cout << "Delete" << std::endl;
   delete checker;
   return 0;
 }

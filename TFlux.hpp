@@ -9,6 +9,7 @@
 #include <TFile.h>
 #include <TGraph.h>
 #include <TH1.h>
+#include <TH2.h>
 #include <THttpServer.h>
 #include <TStyle.h>
 
@@ -42,9 +43,13 @@ class TFlux
   void SetTimeInterval(int t) { fTimeInterval = t; };
 
   void ReadDigitizer();
+  void ReadADC();
   void TimeCheck();
 
   void FillData();
+  void FillADC();
+
+  void SWTrigger();
 
   void Terminate() { fAcqFlag = false; };
 
@@ -52,6 +57,7 @@ class TFlux
   TPSD *fDigitizer;
 
   std::deque<SampleData> fQueue;
+  std::deque<uint> fADCQueue;
   std::mutex fMutex;
 
   mongocxx::instance *fMongoInstance;
@@ -68,6 +74,8 @@ class TFlux
   void PlotAll();
   int fFillCounter;
   TH1D *fHisADC;
+  TH1D *fHisTime;
+  TH2D *fHisTimeADC;
   TGraph *fGrWave;
   TCanvas *fCanvas;
   THttpServer *fServer;
