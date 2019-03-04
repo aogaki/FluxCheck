@@ -1,6 +1,6 @@
 Polarity	Negative
 DCOffset	0.1
-Threshold	500
+Threshold	120
 Start	0
 Stop	30000
 Channel 2

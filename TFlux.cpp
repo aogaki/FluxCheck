@@ -1,6 +1,8 @@
 #include <fstream>
 #include <iostream>
 
+#include <TTree.h>
+
 #include "TFlux.hpp"
 
 TFlux::TFlux()
@@ -37,7 +39,7 @@ TFlux::TFlux()
   fGrWave->SetMinimum(0);
 
   // auto fServer = new THttpServer("http:8888?monitoring=5000;rw;noglobal");
-  fServer = new THttpServer("http:8888");
+  // fServer = new THttpServer("http:8888");
   // fServer->Register("/", fHisADC);
 
   PlotAll();
@@ -47,7 +49,8 @@ TFlux::TFlux(uint linkNumber) : TFlux()
 {
   // Digitizer
   fDigitizer = new TPSD(CAEN_DGTZ_USB, linkNumber);
-  fDigitizer->SetChMask(fChMask);
+  // fDigitizer->SetChMask(fChMask);
+  fDigitizer->SetChMask(0b00110000);
   fDigitizer->Initialize();
 }
 
@@ -62,16 +65,18 @@ TFlux::~TFlux()
   fHisADC->Write();
   fHisTimeADC->Write();
   file->Close();
+
+  // I trust ROOT sniffer
   delete file;
-  delete fCanvas;
-  delete fGrWave;
-
-  delete fHisTime;
-  delete fHisADC;
-
-  // fServer->Unregister(fHisADC);
-  // fServer->SetTerminate();
-  delete fServer;
+  // delete fCanvas;
+  // delete fGrWave;
+  //
+  // delete fHisTime;
+  // delete fHisADC;
+  //
+  // // fServer->Unregister(fHisADC);
+  // // fServer->SetTerminate();
+  // delete fServer;
 }
 
 void TFlux::ReadDigitizer()
@@ -94,7 +99,7 @@ void TFlux::ReadDigitizer()
 
       data.ChNumber = dataArray[index + offset];
       offset += sizeof(data.ChNumber);
-      if (data.ChNumber != fCheckCh) continue;
+      // if (data.ChNumber != fCheckCh) continue;
 
       memcpy(&data.TimeStamp, &dataArray[index + offset],
              sizeof(data.TimeStamp));
@@ -138,6 +143,8 @@ void TFlux::FillData()
   while (fAcqFlag) {
     while (!fQueue.empty()) {
       auto data = fQueue.front();
+
+      fMutex.lock();
       fHisADC->Fill(data.ADC);
       fHisTime->Fill(data.TimeStamp);
       // fHisTime->Fill(data.TimeStamp * 2000 / 1024);
@@ -147,7 +154,6 @@ void TFlux::FillData()
         fGrWave->SetPoint(iSample, iSample * 2, data.Waveform[iSample]);
       }
 
-      fMutex.lock();
       fQueue.pop_front();
       fMutex.unlock();
     }
@@ -252,4 +258,91 @@ void TFlux::SWTrigger()
     fMutex.unlock();
     usleep(1000);
   }
+}
+
+void TFlux::StoreData()
+{
+  TFile *file = new TFile("tmp.root", "RECREATE");
+  TTree *tree = new TTree("fine", "Fine time stamp check");
+
+  UChar_t ch;
+  tree->Branch("ch", &ch, "ch/b");
+
+  UShort_t adc;
+  tree->Branch("adc", &adc, "adc/s");
+
+  ULong64_t fine;
+  tree->Branch("fine", &fine, "fine/l");
+
+  while (fAcqFlag) {
+    while (!fQueue.empty()) {
+      auto data = fQueue.front();
+      ch = data.ChNumber;
+      adc = data.ADC;
+      fine = data.TimeStamp;
+      tree->Fill();
+
+      fMutex.lock();
+      fQueue.pop_front();
+      fMutex.unlock();
+    }
+
+    usleep(1000);
+  }
+
+  file->cd();
+  tree->Write();
+  file->Close();
+  delete file;
+}
+
+void TFlux::StoreAndFill()
+{
+  TFile *file = new TFile("tmp.root", "RECREATE");
+  TTree *tree = new TTree("fine", "Fine time stamp check");
+
+  UChar_t ch;
+  tree->Branch("ch", &ch, "ch/b");
+
+  UShort_t adc;
+  tree->Branch("adc", &adc, "adc/s");
+
+  ULong64_t fine;
+  tree->Branch("fine", &fine, "fine/l");
+
+  while (fAcqFlag) {
+    while (!fQueue.empty()) {
+      auto data = fQueue.front();
+      ch = data.ChNumber;
+      adc = data.ADC;
+      fine = data.TimeStamp;
+      tree->Fill();
+
+      fMutex.lock();
+      // if (data.ChNumber == 3) {
+      if (data.ChNumber == 4) {
+        fHisADC->Fill(data.ADC);
+        fHisTime->Fill(data.TimeStamp);
+        // fHisTime->Fill(data.TimeStamp * 2000 / 1024);
+        fHisTimeADC->Fill(data.TimeStamp, data.ADC);
+
+        for (uint iSample = 0; iSample < kNSamples; iSample++) {
+          fGrWave->SetPoint(iSample, iSample * 2, data.Waveform[iSample]);
+        }
+      }
+      fQueue.pop_front();
+      fMutex.unlock();
+    }
+
+    if ((++fFillCounter % 1000) == 0) PlotAll();
+
+    usleep(1000);
+  }
+
+  file->cd();
+  tree->Write();
+  file->Close();
+  delete file;
+
+  PlotAll();
 }

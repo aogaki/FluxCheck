@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <iostream>
+#include <mutex>
 #include <thread>
 
 #include <TApplication.h>
@@ -34,6 +35,8 @@ int kbhit(void)
   return 0;
 }
 
+std::mutex mutexLocker;
+
 int main(int argc, char **argv)
 {
   auto timeInterval = 60;
@@ -53,15 +56,20 @@ int main(int argc, char **argv)
   checker->SetTimeInterval(timeInterval);
   checker->StartAcquisition();
 
+  // auto server = new THttpServer("http:8888");
+
   std::thread readDigitizer(&TFlux::ReadDigitizer, checker);
-  std::thread fillData(&TFlux::FillData, checker);
+  // std::thread fillData(&TFlux::FillData, checker);
+  std::thread fillData(&TFlux::StoreAndFill, checker);
   // std::thread readDigitizer(&TFlux::ReadADC, checker);
   // std::thread fillData(&TFlux::FillADC, checker);
   std::thread timeCheck(&TFlux::TimeCheck, checker);
   // std::thread trigger(&TFlux::SWTrigger, checker);
 
   while (true) {
+    mutexLocker.lock();
     gSystem->ProcessEvents();  // This should be called at main thread
+    mutexLocker.unlock();
 
     if (kbhit()) {
       checker->Terminate();
@@ -80,6 +88,7 @@ int main(int argc, char **argv)
   checker->StopAcquisition();
 
   std::cout << "Delete" << std::endl;
+  // delete server;
   delete checker;
   return 0;
 }

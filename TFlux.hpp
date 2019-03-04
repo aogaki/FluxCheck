@@ -48,6 +48,8 @@ class TFlux
 
   void FillData();
   void FillADC();
+  void StoreData();
+  void StoreAndFill();
 
   void SWTrigger();
 
