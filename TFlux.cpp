@@ -178,7 +178,8 @@ void TFlux::UploadData(double currentTime, double rate)
 
   buf << "title"
       << "count"
-      << "content" << currentTime << "imagePath" << rate;
+      << "content" << std::to_string(currentTime) << "imagePath"
+      << std::to_string(rate);
   collection.insert_one(buf.view());
   buf.clear();
 }
